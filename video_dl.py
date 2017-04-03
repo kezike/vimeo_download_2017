@@ -24,7 +24,7 @@ class VideoDownloader(object):
         # min size in bytes of file necessary
         # for partial download requests
         self.partial_thresh = par_thresh
-        # connection timeout period
+        # connection timeout period in seconds
         self.timeout = to
         timeout = to
         # exponential backoff on subsequent timeout periods
@@ -44,6 +44,8 @@ class VideoDownloader(object):
         # video content size (to be set during server info request)
         self.content_size = None
 
+    # retry server connection some specified number of times after
+    # a timeout period that exponentially builds up over time
     @retry(URLError, tries=num_tries, delay=timeout, backoff=backoff)
     def urlopen_retry(self):
         return urllib2.urlopen(self.video_url)
@@ -66,15 +68,15 @@ class VideoDownloader(object):
             self.urlopen_retry()
         return server_resp
 
-    # download video in one serial request
-    def download_video_ser(self):
+    # download video in one atomic request
+    def download_video_atom(self):
         # expect connect_server to raise exception where necessary
         server_resp = self.connect_server()
-        print "Beginning serial download of " + self.file_name + "..."
+        print "Beginning atomic download of '" + self.file_name + "'..."
         file_obj = open(self.file_name, 'a')
         file_obj.write(server_resp.read())
         file_obj.close()
-        print "Successfully downloaded " + self.file_name + '!'
+        print "Successfully downloaded '" + self.file_name + "'!"
     
     # intermediately write downloaded chunks to file
     def file_persist(self):
@@ -85,7 +87,7 @@ class VideoDownloader(object):
 
     # download video in partial requests
     def download_video_par(self):
-        print "Beginning partial download requests for " + self.file_name + "..."
+        print "Beginning partial download requests for '" + self.file_name + "'..."
         server_req = Request(self.video_url)
         range_min = 0
         range_max = self.partial_thresh - 1
@@ -102,14 +104,14 @@ class VideoDownloader(object):
             range_min = min(range_min + self.partial_thresh, self.content_size)
             range_max = min(range_max + self.partial_thresh, self.content_size)
             if data_size_since_last_persist >= self.file_persist_thresh:
-                print "Intermediately writing downloaded data to " + self.file_name + "..."
+                print "Intermediately writing downloaded data to '" + self.file_name + "'..."
                 self.file_persist()
                 data_size_since_last_persist = 0
                 download_progress = cumulative_data_size * 100.0 / float(self.content_size)
                 print "Download progress: " + str(download_progress) + '%'
                 print "Continuing download..."
         self.file_persist()
-        print "Successfully downloaded " + self.file_name + '!'
+        print "Successfully downloaded '" + self.file_name + "'!"
 
     # inspect data about the server and download video
     def download_video(self):
@@ -128,7 +130,7 @@ class VideoDownloader(object):
                     # download multiple chunks of video source file in partial requests
                     self.download_video_par()
                 else:
-                    self.download_video_ser()
+                    self.download_video_atom()
             else:
-                # download entire video source file in one serial request
-                self.download_video_ser()
+                # download entire video source file in one atomic request
+                self.download_video_atom()
